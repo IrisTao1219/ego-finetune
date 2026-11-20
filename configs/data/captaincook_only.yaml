@@ -1,0 +1,44 @@
+# CaptainCook4D instructions + CaptainCook4D counterfactual interventions.
+_target_: data
+split_by_video: true
+create_train_val_test_split: [0.8, 0.1, 0.1]
+dataset:
+  name: captaincook_only
+  train_length: 3200
+  probabilities: [0.3333333333, 0.6666666667]
+  dataset_list:
+    - _target_: CaptainCook4DInstruct
+      captaincook4d_root: ${data_paths.captaincook4d_root}
+      annotation_source: hf
+      annotation_repo_id: qualcomm/qualcomm-interactive-cooking-dataset
+      annotation_set: main
+      split: train
+      include_validation_in_train: false
+      max_number_of_output_frames: 128
+      temporal_jitter_prob: 0.75
+      feedback_vs_success_pref_weight: 2.0
+    - _target_: EgoCoMist
+      captaincook4d_root: ${data_paths.captaincook4d_root}
+      ego4d_root: ${data_paths.captaincook4d_root}
+      egoexo4d_root: ${data_paths.captaincook4d_root}
+      source_datasets: [CaptainCook4D]
+      split: train
+      dataset_extracted_fps: 2
+      max_number_of_output_frames: 128
+      temporal_jitter_prob: 0.75
+collate_fn:
+  image_size: 224
+  frame_transforms:
+    - height: 224
+      width: 224
+      keep_aspect_ratio: false
+  max_frames: 128
+  max_streaming_frames: 128
+  max_text_length: 1024
+  num_of_feats_per_frame: ${model.net.num_of_feats_per_frame}
+  num_of_frames_per_sec: ${model.net.num_of_frames_per_sec}
+  vision_encoder_feat_reduction_factor: ${model.net.vision_encoder_feat_reduction_factor}
+batch_size: 1
+num_workers: 4
+pin_memory: true
+persistent_workers: false

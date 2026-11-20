@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - train
+  - override /data: captaincook_only
+experiment_name: captaincook_2xa800
+job_name: captaincook_subset
+trainer:
+  devices: 2
+  min_epochs: 1
+  max_epochs: 10
+  max_steps: 1000
+  accumulate_grad_batches: 16
+model:
+  gradient_checkpointing: true
+  scheduler:
+    T_max: ${trainer.max_steps}
+data_paths:
+  captaincook4d_root: ../datasets

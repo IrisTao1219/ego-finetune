@@ -74,6 +74,61 @@ def _build_component_dataset(spec: dict[str, Any]) -> Dataset[CookingSample]:
     raise ValueError(f"Unsupported dataset target: {target}")
 
 
+def _video_split_components(components, probabilities, fractions, train_length, seed):
+    """Split raw samples before any weighted resampling, sharing video assignments."""
+    import random
+    from torch.utils.data import ConcatDataset
+
+    if len(fractions) != 3 or any(x <= 0 for x in fractions):
+        raise ValueError("video split requires three positive fractions")
+    if abs(sum(fractions) - 1.0) > 1e-6:
+        raise ValueError("split fractions must sum to one")
+    if len(components) != len(probabilities) or any(p < 0 for p in probabilities) or sum(probabilities) <= 0:
+        raise ValueError("Need one nonnegative probability per component and positive total weight")
+    if any(len(d) == 0 for d, p in zip(components, probabilities) if p > 0):
+        raise ValueError("A requested component has no matched samples; check frames and annotations")
+    video_ids = sorted({str(s.metadata["video_id"]) for d in components for s in d.samples})
+    if len(video_ids) < 3:
+        raise ValueError("Need at least three matched videos for a video-disjoint split")
+    random.Random(seed).shuffle(video_ids)
+    nv = max(1, round(len(video_ids) * fractions[1]))
+    nt = max(1, round(len(video_ids) * fractions[2]))
+    if nv + nt >= len(video_ids):
+        raise ValueError("Not enough training videos after validation/test split")
+    groups = [set(video_ids[nv + nt:]), set(video_ids[:nv]), set(video_ids[nv:nv + nt])]
+    result = {}
+    report = {}
+    for split_name, ids in zip(("train", "val", "test"), groups):
+        subsets = []
+        active_probabilities = []
+        counts = []
+        for component, probability in zip(components, probabilities):
+            indices = [i for i, sample in enumerate(component.samples)
+                       if str(sample.metadata["video_id"]) in ids]
+            samples = [component.samples[i] for i in indices]
+            counts.append(len(samples))
+            if not samples or probability <= 0:
+                continue
+            weights = ([component.sample_weights[i] for i in indices]
+                       if component.sample_weights is not None else None)
+            if weights is not None and sum(weights) <= 0:
+                raise ValueError(f"No positive sample weights in {split_name}")
+            # Validation enumerates each sample once, with no temporal jitter.
+            subsets.append(ListDataset(samples,
+                temporal_jitter=component.temporal_jitter if split_name == "train" else None,
+                sample_weights=weights if split_name == "train" else None))
+            active_probabilities.append(probability)
+        if not subsets:
+            raise ValueError(f"No usable samples in {split_name}")
+        result[split_name] = (WeightedMixtureDataset(subsets, active_probabilities,
+            int(train_length or sum(map(len, subsets))), seed)
+            if split_name == "train" else ConcatDataset(subsets))
+        report[split_name] = {"video_ids": sorted(ids), "component_samples": counts,
+                              "length": len(result[split_name])}
+    print("VIDEO_SPLIT " + __import__("json").dumps(report), flush=True)
+    return result
+
+
 def build_datasets(cfg: Any, seed: int) -> dict[str, Dataset[CookingSample]]:
     """Build the train/val/test datasets from a data config.
 
@@ -111,6 +166,10 @@ def build_datasets(cfg: Any, seed: int) -> dict[str, Dataset[CookingSample]]:
     ]
     if len(fractions) != 3:
         raise ValueError("create_train_val_test_split must contain train, val, and test fractions")
+
+    if plain_cfg.get("split_by_video", False):
+        return _video_split_components(dataset_list, probabilities, fractions,
+                                       dataset_cfg.get("train_length"), seed)
 
     train_length = dataset_cfg.get("train_length")
     if train_length is None:

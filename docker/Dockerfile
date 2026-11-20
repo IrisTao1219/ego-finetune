@@ -10,8 +10,11 @@ RUN apt update && \
 && rm -rf /var/lib/apt/lists/*
 
 # pip installations
-COPY docker/requirements-pip.txt requirements-pip.txt
-RUN pip install --no-cache-dir --upgrade -r requirements-pip.txt
+# The base image supplies CUDA 12.8 build tools; pip below replaces its torch
+# with the same 2.11.0+cu128 build used by ego-mc-bench-test.
+COPY requirements-base.txt /requirements-base.txt
+COPY docker/requirements-pip.txt /docker/requirements-pip.txt
+RUN pip install --no-cache-dir --upgrade -r /docker/requirements-pip.txt
 
 # causal-conv1d provides the fused CUDA kernels the Qwen3.5 hybrid-attention
 # layers import (transformers/models/qwen3_5/modeling_qwen3_5.py). No prebuilt

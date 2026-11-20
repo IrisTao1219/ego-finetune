@@ -50,6 +50,9 @@ class EgoCoMist(ListDataset):
         fps = float(cfg.get("dataset_extracted_fps", cfg.get("model_input_fps", 2)))
         frame_limit = int(cfg.get("max_number_of_output_frames", 200))
         annotations = self._load_annotations(repo_id, cfg)
+        allowed_sources = cfg.get("source_datasets")
+        if allowed_sources:
+            annotations = [row for row in annotations if row.get("dataset") in allowed_sources]
         max_videos = cfg.get("max_videos")
         if max_videos is not None:
             annotations = annotations[: int(max_videos)]

@@ -1,0 +1,9 @@
+# Shared baseline copied from ego-mc-bench-test/requirements.txt.
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+transformers>=5.5.0,<6
+torch==2.11.0+cu128
+torchvision==0.26.0+cu128
+accelerate>=1.0
+opencv-python-headless>=4.10
+Pillow>=10
