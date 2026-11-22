@@ -29,10 +29,23 @@ To use a local model, append `model.tokenizer.pretrained_model_name_or_path=/abs
 In the existing Linux CUDA server environment, run from this repository root:
 
 ```bash
+conda create -n captaincook-train python=3.10 -y
+conda activate ego-train
+
 python -m pip install --dry-run -r docker/requirements-pip.txt
 python -m pip install -r docker/requirements-pip.txt
 python -m pip check
 python scripts/check_kernels.py
+
+
+# 1. 检查内核
+python scripts/check_kernels.py
+
+# 2. 还没抽帧的话，先执行
+bash scripts/extract_captaincook_frames.sh
+
+# 3. 检查匹配样本和视频划分
+python scripts/check_captaincook_data.py
 ```
 
 Do not run these installation commands on the local Mac. The dry run lets you review dependency changes before installing. Existing packages satisfying the bounds are reused (no --upgrade). If both opencv-python and opencv-python-headless are already installed, resolve that shared cv2 namespace conflict in the server environment before training.
