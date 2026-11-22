@@ -15,4 +15,4 @@ model:
   scheduler:
     T_max: ${trainer.max_steps}
 data_paths:
-  captaincook4d_root: ../datasets
+  captaincook4d_root: ../data/

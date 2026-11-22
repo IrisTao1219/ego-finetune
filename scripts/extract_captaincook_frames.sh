@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Run from the repository root; completed videos are resumable.
 set -euo pipefail
-src="${1:-../datasets/captain_cook_4d/gopro/resolution_360p}"
-dst="${2:-../datasets/captain_cook_4d/gopro/resolution_360p_2fps_frames}"
+src="${1:-../data/captain_cook_4d/gopro/resolution_360p}"
+dst="${2:-../data/captain_cook_4d/gopro/resolution_360p_2fps_frames}"
 command -v ffmpeg >/dev/null
 shopt -s nullglob
 videos=("$src"/*_360p.mp4)
