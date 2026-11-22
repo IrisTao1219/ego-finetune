@@ -547,6 +547,8 @@ def run_experiment(cfg: DictConfig) -> float:
             outputs = model_engine(**batch)
             loss = _extract_loss(outputs)
             model_engine.backward(loss)
+            # DeepSpeed advances micro_steps in step(); capture this batch's boundary first.
+            update_boundary = model_engine.is_gradient_accumulation_boundary()
             model_engine.step()
 
             running_metrics["loss"] += float(loss.detach().item())
@@ -559,7 +561,7 @@ def run_experiment(cfg: DictConfig) -> float:
                 running_counts[metric_key] += 1
             local_steps += 1
 
-            if model_engine.is_gradient_accumulation_boundary():
+            if update_boundary:
                 global_step += 1
                 log_payload = {
                     "epoch": epoch_idx + 1,
