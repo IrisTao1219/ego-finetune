@@ -18,6 +18,7 @@ dataset:
       temporal_jitter_prob: 0.75
       feedback_vs_success_pref_weight: 2.0
     - _target_: EgoCoMist
+      local_annotations_path: ${oc.env:HOME}/datasets/ego-comist/annotations.json
       captaincook4d_root: ${data_paths.captaincook4d_root}
       ego4d_root: ${data_paths.captaincook4d_root}
       egoexo4d_root: ${data_paths.captaincook4d_root}

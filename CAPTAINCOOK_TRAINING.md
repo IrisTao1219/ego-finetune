@@ -2,8 +2,8 @@
 
 Run from this repository root on the CUDA server. Use the repository Docker/dependency environment; no GPU run has been verified locally.
 
-Videos: `../datasets/captain_cook_4d/gopro/resolution_360p/<id>_360p.mp4`.
-Extract whole videos at 2 fps into `../datasets/captain_cook_4d/gopro/resolution_360p_2fps_frames/<id>_360p/frame_%06d.jpg` using ffmpeg. Keep the original time origin; do not extract trimmed clips. Remove/rebuild stale `../datasets/video_to_frames.pkl` after adding frames.
+Videos: `../data/captain_cook_4d/gopro/resolution_360p/<id>_360p.mp4`.
+Extract whole videos at 2 fps into `../data/captain_cook_4d/gopro/resolution_360p_2fps_frames/<id>_360p/frame_%06d.jpg` using ffmpeg. Keep the original time origin; do not extract trimmed clips. Remove/rebuild stale `../data/video_to_frames.pkl` after adding frames.
 
 ```bash
 bash scripts/extract_captaincook_frames.sh
