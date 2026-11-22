@@ -9,7 +9,7 @@ dataset:
   dataset_list:
     - _target_: CaptainCook4DInstruct
       captaincook4d_root: ${data_paths.captaincook4d_root}
-      annotation_source: hf
+      annotation_source: local
       annotation_repo_id: qualcomm/qualcomm-interactive-cooking-dataset
       annotation_set: main
       split: train

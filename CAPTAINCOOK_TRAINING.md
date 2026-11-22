@@ -38,3 +38,14 @@ python scripts/check_kernels.py
 Do not run these installation commands on the local Mac. The dry run lets you review dependency changes before installing. Existing packages satisfying the bounds are reused (no --upgrade). If both opencv-python and opencv-python-headless are already installed, resolve that shared cv2 namespace conflict in the server environment before training.
 
 The Dockerfile retains the original CUDA 12.8 development base for nvcc, but explicitly installs the shared torch pin before compiling causal-conv1d. An existing server environment also needs a compatible causal-conv1d build for its installed torch; if the kernel check fails, use the repository Docker build or rebuild that extension against the server torch. Inference success alone does not validate DeepSpeed, PEFT, FLA or causal-conv1d training compatibility. No local torch version is used to choose these requirements.
+
+## Prefetch instruction annotations before training
+
+The CaptainCook-only configuration now reads instruction annotations locally. First run:
+
+```bash
+python scripts/download_captaincook_annotations.py --data-root ../data
+python scripts/check_captaincook_data.py data_paths.captaincook4d_root=../data
+```
+
+This writes `../data/main_train.json` using the same HF repo/config/train split as before. The loader honors `include_validation_in_train: false` for local annotations too, so no `main_val.json` is required and the upstream validation split is not silently added. Other experiments retaining the default true value still require both files; pass `--include-validation` to prefetch both. Completed local files are reused, downloads are validated and published atomically. Only this preparation step requires network access for missing annotations; training reads the instruction JSON and the configured local Ego-CoMist JSON. Do not substitute Ego-CoMist's annotations.json for main_train.json.

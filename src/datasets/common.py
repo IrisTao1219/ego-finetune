@@ -708,14 +708,60 @@ def _hf_dataset_server_json(endpoint: str, params: dict[str, Any]) -> dict[str, 
     Returns:
         The decoded JSON response body.
     """
+    import hashlib
+    import http.client
+    import os
+    import tempfile
+    import time
+    import urllib.error
     import urllib.parse
     import urllib.request
+    import warnings
 
     url = (
         "https://datasets-server.huggingface.co/" + endpoint + "?" + urllib.parse.urlencode(params)
     )
-    with urllib.request.urlopen(url, timeout=120) as response:
-        return json.loads(response.read().decode("utf-8"))
+    hf_home = Path(os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface")))
+    cache_root = hf_home / "captaincook_dataset_server"
+    cache_path = cache_root / (hashlib.sha256(url.encode()).hexdigest() + ".json")
+    if cache_path.exists():
+        try:
+            return json.loads(cache_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            pass  # Ignore old incomplete cache entries; only complete JSON is reusable.
+    if os.environ.get("HF_HUB_OFFLINE", "").upper() in {"1", "TRUE", "YES"}:
+        raise FileNotFoundError(f"Offline mode: annotation response not cached: {cache_path}")
+
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            break
+        except (http.client.IncompleteRead, urllib.error.URLError, TimeoutError,
+                ConnectionError, json.JSONDecodeError) as exc:
+            if isinstance(exc, urllib.error.HTTPError) and exc.code not in {408, 429, 500, 502, 503, 504}:
+                raise
+            if attempt == 3:
+                raise
+            warnings.warn(f"Annotation request interrupted ({type(exc).__name__}); "
+                          f"retrying {attempt + 1}/3: {endpoint}")
+            time.sleep(2 ** attempt)
+
+    # Both ranks can fetch the same page: publish complete files atomically.
+    temporary_path = None
+    try:
+        cache_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=cache_root,
+                                         delete=False) as handle:
+            temporary_path = Path(handle.name)
+            json.dump(payload, handle)
+        os.replace(temporary_path, cache_path)
+    except OSError as exc:
+        warnings.warn(f"Could not cache annotations at {cache_path}: {exc}")
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+    return payload
 
 
 def _path_matches(path_entry: str, target: Path) -> bool:

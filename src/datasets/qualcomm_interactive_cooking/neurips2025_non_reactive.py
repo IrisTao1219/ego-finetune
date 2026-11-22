@@ -94,9 +94,9 @@ class CaptainCook4DInstructDataset(ListDataset):
                 cache_dir=cfg.get("hf_cache_dir", cfg.get("cache_dir")),
             )
         elif split == "train":
-            annotations = _load_json(root / f"{annotation_set}_train.json") + _load_json(
-                root / f"{annotation_set}_val.json"
-            )
+            annotations = _load_json(root / f"{annotation_set}_train.json")
+            if bool(cfg.get("include_validation_in_train", True)):
+                annotations += _load_json(root / f"{annotation_set}_val.json")
         elif split in {"val", "valid", "validation"}:
             annotations = _load_json(root / f"{annotation_set}_val.json")
         else:
