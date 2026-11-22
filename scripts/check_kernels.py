@@ -96,8 +96,8 @@ def _triton_version() -> tuple[str, str]:
     )
 
 
-def _check_triton_window(triton_version: str) -> None:
-    """Assert the Triton version can run fla's gated backward kernels.
+def _check_triton_window(triton_version: str, capabilities: set[tuple[int, int]] | None = None) -> None:
+    """Check version floor and apply the known Hopper-only exclusion.
 
     Args:
         triton_version: The installed Triton version string.
@@ -112,6 +112,14 @@ def _check_triton_window(triton_version: str) -> None:
             f"{'.'.join(map(str, TRITON_MIN))} floor required by flash-linear-attention."
         )
     if TRITON_BAD_LO <= parsed < TRITON_BAD_HI:
+        if capabilities is None:
+            print("WARNING: Triton is in the Hopper risk window; GPU architecture "
+                  "is unknown during build. Run the runtime check on the target GPU.")
+            return
+        if not any(major == 9 for major, _ in capabilities):
+            print("note: Hopper-specific Triton guard does not apply to visible "
+                  f"GPU capabilities {sorted(capabilities)}; backward still needs testing.")
+            return
         raise SystemExit(
             f"FAIL: triton {triton_version} is inside the known-bad window "
             f"[{'.'.join(map(str, TRITON_BAD_LO))}, {'.'.join(map(str, TRITON_BAD_HI))}), "
@@ -165,13 +173,14 @@ def check_runtime() -> None:
     import torch
 
     triton_dist, triton_version = _triton_version()
-    _check_triton_window(triton_version)
-
     if not torch.cuda.is_available():
         raise SystemExit(
             "FAIL: no CUDA device visible. Run this inside a GPU container, e.g. "
             "`make check-kernels`, or use `--build` for the package-only check."
         )
+
+    capabilities = {torch.cuda.get_device_capability(i) for i in range(torch.cuda.device_count())}
+    _check_triton_window(triton_version, capabilities)
 
     import causal_conv1d
     from causal_conv1d import causal_conv1d_fn, causal_conv1d_update
@@ -214,7 +223,7 @@ def check_runtime() -> None:
         print(
             "note: no Hopper GPU here, so the Triton-miscompile guard that trips on "
             "H100 would not fire on this machine even with a bad Triton. The version "
-            "check above still covers it."
+            "guard is therefore not applied to this architecture."
         )
 
 
