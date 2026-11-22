@@ -1,0 +1,79 @@
+Current Python version 3.10 is below the recommended 3.11 version. It is recommended to upgrade to Python 3.11 or higher for the best experience.
+Relaunching with 2 distributed processes: /home/taosha/miniconda3/envs/ego-train/bin/python -m torch.distributed.run --standalone --nproc_per_node=2 /home/taosha/ego-finetune/scripts/run.py experiment=captaincook_2xa800 data_paths.captaincook4d_root=../data model.tokenizer.pretrained_model_name_or_path=/home/taosha/datasets/Hf_model/Qwen3.5-2B trainer.max_steps=10 trainer.max_epochs=1 hydra.run.dir=/home/taosha/ego-finetune/outputs/logs/train/captaincook_subset/runs/2026-11-22_13-03-44
+
+*****************************************
+Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+*****************************************
+Current Python version 3.10 is below the recommended 3.11 version. It is recommended to upgrade to Python 3.11 or higher for the best experience.
+Current Python version 3.10 is below the recommended 3.11 version. It is recommended to upgrade to Python 3.11 or higher for the best experience.
+[transformers] The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.
+[transformers] The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.
+Error executing job with overrides: ['experiment=captaincook_2xa800', 'data_paths.captaincook4d_root=../data', 'model.tokenizer.pretrained_model_name_or_path=/home/taosha/datasets/Hf_model/Qwen3.5-2B', 'trainer.max_steps=10', 'trainer.max_epochs=1']
+Traceback (most recent call last):
+  File "/home/taosha/ego-finetune/scripts/run.py", line 155, in main
+    return run_experiment(cfg)
+  File "/home/taosha/ego-finetune/src/pipeline.py", line 409, in run_experiment
+    datasets = build_datasets(cfg.data, seed=seed)
+  File "/home/taosha/ego-finetune/src/data.py", line 155, in build_datasets
+    dataset_list = [
+  File "/home/taosha/ego-finetune/src/data.py", line 156, in <listcomp>
+    _build_component_dataset(dict(spec)) for spec in dataset_cfg.get("dataset_list", [])
+  File "/home/taosha/ego-finetune/src/data.py", line 63, in _build_component_dataset
+    return CaptainCook4DInstructDataset(**spec)
+  File "/home/taosha/ego-finetune/src/datasets/qualcomm_interactive_cooking/neurips2025_non_reactive.py", line 90, in __init__
+    annotations = _load_hf_dataset_rows(
+  File "/home/taosha/ego-finetune/src/datasets/common.py", line 886, in _load_hf_dataset_rows
+    rows.extend(_load_hf_dataset_server_rows(repo_id, config_name, split))
+  File "/home/taosha/ego-finetune/src/datasets/common.py", line 810, in _load_hf_dataset_server_rows
+    rows_payload = _hf_dataset_server_json(
+  File "/home/taosha/ego-finetune/src/datasets/common.py", line 718, in _hf_dataset_server_json
+    return json.loads(response.read().decode("utf-8"))
+  File "/home/taosha/miniconda3/envs/ego-train/lib/python3.10/http/client.py", line 497, in read
+    s = self._safe_read(self.length)
+  File "/home/taosha/miniconda3/envs/ego-train/lib/python3.10/http/client.py", line 673, in _safe_read
+    raise IncompleteRead(data.getvalue(), amt - data.tell())
+http.client.IncompleteRead: IncompleteRead(1307516 bytes read, 19688 more expected)
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+[rank0]:[W1122 13:04:31.041537766 ProcessGroupNCCL.cpp:1575] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+W1122 13:04:32.443000 3701081 site-packages/torch/distributed/elastic/multiprocessing/api.py:1012] Sending process 3701676 closing signal SIGTERM
+E1122 13:04:32.611000 3701081 site-packages/torch/distributed/elastic/multiprocessing/api.py:986] failed (exitcode: 1) local_rank: 0 (pid: 3701675) of binary: /home/taosha/miniconda3/envs/ego-train/bin/python
+Traceback (most recent call last):
+  File "/home/taosha/miniconda3/envs/ego-train/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/taosha/miniconda3/envs/ego-train/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/home/taosha/miniconda3/envs/ego-train/lib/python3.10/site-packages/torch/distributed/run.py", line 994, in <module>
+    main()
+  File "/home/taosha/miniconda3/envs/ego-train/lib/python3.10/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 362, in wrapper
+    return f(*args, **kwargs)
+  File "/home/taosha/miniconda3/envs/ego-train/lib/python3.10/site-packages/torch/distributed/run.py", line 990, in main
+    run(args)
+  File "/home/taosha/miniconda3/envs/ego-train/lib/python3.10/site-packages/torch/distributed/run.py", line 981, in run
+    elastic_launch(
+  File "/home/taosha/miniconda3/envs/ego-train/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 170, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/home/taosha/miniconda3/envs/ego-train/lib/python3.10/site-packages/torch/distributed/launcher/api.py", line 317, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+/home/taosha/ego-finetune/scripts/run.py FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-11-22_13:04:32
+  host      : lthpc
+  rank      : 1 (local_rank: 1)
+  exitcode  : -15 (pid: 3701676)
+  error_file: <N/A>
+  traceback : Signal 15 (SIGTERM) received by PID 3701676
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-11-22_13:04:32
+  host      : lthpc
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 3701675)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
