@@ -16,3 +16,7 @@ model:
     T_max: ${trainer.max_steps}
 data_paths:
   captaincook4d_root: ../data/
+
+callbacks:
+  model_checkpoint:
+    every_n_train_steps: 25

@@ -62,3 +62,49 @@ python scripts/check_captaincook_data.py data_paths.captaincook4d_root=../data
 ```
 
 This writes `../data/main_train.json` using the same HF repo/config/train split as before. The loader honors `include_validation_in_train: false` for local annotations too, so no `main_val.json` is required and the upstream validation split is not silently added. Other experiments retaining the default true value still require both files; pass `--include-validation` to prefetch both. Completed local files are reused, downloads are validated and published atomically. Only this preparation step requires network access for missing annotations; training reads the instruction JSON and the configured local Ego-CoMist JSON. Do not substitute Ego-CoMist's annotations.json for main_train.json.
+
+## Checkpoints and interrupted training
+
+Artifacts are separate from stdout logs and Git changes. The run prints its
+absolute output directory and checkpoint save start/completion. DeepSpeed writes
+`*model_states.pt` and `*optim_states.pt` shards under `checkpoints/`; a standalone
+HF model file is not generated (`export_fp32_weights` defaults to false).
+CaptainCook saves every 25 optimizer updates and at `max_steps` before validation,
+as well as after each epoch validation. Step checkpoints are not pruned by
+`save_top_k`, so adjust the interval for available disk space.
+
+Resume on the CUDA server using the same model, data, GPU count, batch size and
+accumulation settings as the interrupted run. Pass a checkpoint **directory**, not
+one individual `.pt` shard:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 python scripts/run.py experiment=captaincook_2xa800 \
+  data_paths.captaincook4d_root=/home/taosha/data \
+  model.tokenizer.pretrained_model_name_or_path=/home/taosha/datasets/Hf_model/Qwen3.5-2B \
+  ckpt_path=/home/taosha/ego-finetune/outputs/logs/train/captaincook_subset/runs/2026-11-22_14-55-28/checkpoints
+```
+
+A checkpoint root loads its `latest` tag; append `/epoch-8` or `/step-25` to select
+one explicitly. Full DeepSpeed checkpoints restore model, optimizer, scheduler,
+epoch and global update count. A consolidated fp32 `.pt` file only initializes
+model weights; it does not resume optimizer or training progress.
+
+New step checkpoints also store the batch cursor and accumulated training metrics;
+resume skips the already processed batch positions in that epoch. Legacy step
+checkpoints without a cursor restart that epoch (with a warning). Epoch checkpoints
+start at the next epoch. Random generator/dataset/worker states are not fully
+restored, so this is practical continuation, not an identical stochastic trajectory.
+Updates after the most recent checkpoint must be rerun; interrupting the process
+does not itself trigger an emergency save.
+
+`auto_resume=true` now loads `checkpoints/latest` in the **current output directory**
+when no explicit `ckpt_path` is given. Since Hydra creates a new directory each run,
+set `hydra.run.dir=/absolute/path/to/previous/run` to use this option. Explicit
+`ckpt_path` with a fresh output directory keeps the previous run's artifacts intact.
+`max_steps` and `max_epochs` are total targets, not additional training amounts;
+a run already at its target performs no further training. To extend completed
+training, increase both limits as needed. A restored scheduler retains its saved
+schedule; changing `max_steps` does not automatically extend that schedule.
+
+These paths and save/resume branches have been checked locally with mock engines;
+actual save/load on two CUDA GPUs still requires server verification.

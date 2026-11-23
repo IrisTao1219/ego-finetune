@@ -372,6 +372,17 @@ def _maybe_export_fp32_checkpoint(
     )
 
 
+def _save_training_checkpoint(model_engine, checkpoint_root: Path, tag: str, client_state: dict) -> None:
+    """All ranks participate in ZeRO checkpoint saving."""
+    _print_rank_zero(f"Saving checkpoint: {checkpoint_root / tag}")
+    result = model_engine.save_checkpoint(
+        str(checkpoint_root), tag=tag, client_state=client_state, save_latest=True
+    )
+    if result is False:
+        raise RuntimeError(f"DeepSpeed failed to save checkpoint: {checkpoint_root / tag}")
+    _print_rank_zero(f"Saved checkpoint: {checkpoint_root / tag}")
+
+
 def run_experiment(cfg: DictConfig) -> float:
     """Run training and/or evaluation for one experiment.
 
@@ -387,7 +398,8 @@ def run_experiment(cfg: DictConfig) -> float:
     """
     _ensure_distributed_initialized()
 
-    output_dir = Path(cfg.paths.output_dir)
+    output_dir = Path(cfg.paths.output_dir).expanduser().resolve()
+    _print_rank_zero(f"Run output directory: {output_dir}")
     if _is_rank_zero():
         output_dir.mkdir(parents=True, exist_ok=True)
         OmegaConf.save(cfg, output_dir / "config.yaml", resolve=False)
@@ -499,20 +511,37 @@ def run_experiment(cfg: DictConfig) -> float:
     checkpoint_root = output_dir / "checkpoints"
     checkpoint_root.mkdir(parents=True, exist_ok=True)
 
+    resume_batch = 0
+    resume_metrics = {}
+    resume_counts = {}
+    if not ckpt_path and bool(cfg.get("auto_resume", False)) and (checkpoint_root / "latest").is_file():
+        ckpt_path = str(checkpoint_root)
     resume_root, resume_tag = _resolve_checkpoint_root_and_tag(
         None if ckpt_path and Path(str(ckpt_path)).is_file() else ckpt_path
     )
     if resume_root is not None:
-        _, client_state = model_engine.load_checkpoint(
+        loaded_path, client_state = model_engine.load_checkpoint(
             resume_root,
             tag=resume_tag,
             load_optimizer_states=True,
             load_lr_scheduler_states=True,
         )
+        if loaded_path is None:
+            raise RuntimeError(f"Failed to load training checkpoint: {resume_root} tag={resume_tag}")
         if client_state:
+            resume_batch = int(client_state.get("batches_seen_in_epoch", 0))
+            resume_metrics = client_state.get("running_metrics", {})
+            resume_counts = client_state.get("running_counts", {})
+            if "batches_seen_in_epoch" not in client_state and Path(loaded_path).parent.name.startswith("step-"):
+                _print_rank_zero("Legacy step checkpoint has no batch cursor; replaying its epoch from the beginning.")
             start_epoch = int(client_state.get("epoch", 0))
             global_step = int(client_state.get("global_step", 0))
             best_val_loss = float(client_state.get("best_val_loss", best_val_loss))
+
+        _print_rank_zero(
+            f"Resumed checkpoint: {loaded_path}; epoch_index={start_epoch}, "
+            f"global_step={global_step}, batches_seen_in_epoch={resume_batch}"
+        )
 
     max_epochs = int(cfg.trainer.max_epochs)
     max_steps = int(cfg.trainer.get("max_steps", -1))
@@ -521,6 +550,8 @@ def run_experiment(cfg: DictConfig) -> float:
     saved_tags: list[str] = []
 
     for epoch_idx in range(start_epoch, max_epochs):
+        if max_steps > 0 and global_step >= max_steps:
+            break
         sampler = train_loader.sampler
         if isinstance(sampler, DistributedSampler):
             sampler.set_epoch(epoch_idx)
@@ -533,6 +564,9 @@ def run_experiment(cfg: DictConfig) -> float:
             "interactive_weighted_loss": 0.0,
         }
         running_counts = {key: 0 for key in running_metrics}
+        if epoch_idx == start_epoch and resume_batch:
+            running_metrics.update(resume_metrics)
+            running_counts.update(resume_counts)
         local_steps = 0
 
         progress_bar = tqdm(
@@ -542,7 +576,9 @@ def run_experiment(cfg: DictConfig) -> float:
             dynamic_ncols=True,
         )
 
-        for batch in progress_bar:
+        for batch_idx, batch in enumerate(progress_bar):
+            if epoch_idx == start_epoch and batch_idx < resume_batch:
+                continue
             batch = _move_batch_to_device(batch, model_engine.device)
             outputs = model_engine(**batch)
             loss = _extract_loss(outputs)
@@ -585,19 +621,21 @@ def run_experiment(cfg: DictConfig) -> float:
                 if _is_rank_zero() and global_step % int(cfg.trainer.log_every_n_steps) == 0:
                     tqdm.write(json.dumps(log_payload))
 
-                if every_n_train_steps > 0 and global_step % every_n_train_steps == 0:
+                if (
+                    every_n_train_steps > 0 and global_step % every_n_train_steps == 0
+                ) or (max_steps > 0 and global_step >= max_steps):
                     checkpoint_tag = f"step-{global_step}"
                     client_state = {
                         "epoch": epoch_idx,
+                        "batches_seen_in_epoch": batch_idx + 1,
+                        "running_metrics": dict(running_metrics),
+                        "running_counts": dict(running_counts),
                         "global_step": global_step,
                         "best_val_loss": best_val_loss,
                         "record": log_payload,
                     }
-                    model_engine.save_checkpoint(
-                        str(checkpoint_root),
-                        tag=checkpoint_tag,
-                        client_state=client_state,
-                        save_latest=True,
+                    _save_training_checkpoint(
+                        model_engine, checkpoint_root, checkpoint_tag, client_state
                     )
 
                 if max_steps > 0 and global_step >= max_steps:
@@ -633,9 +671,7 @@ def run_experiment(cfg: DictConfig) -> float:
             "best_val_loss": min(best_val_loss, val_metrics["loss"]),
             "record": record,
         }
-        model_engine.save_checkpoint(
-            str(checkpoint_root), tag=checkpoint_tag, client_state=client_state, save_latest=True
-        )
+        _save_training_checkpoint(model_engine, checkpoint_root, checkpoint_tag, client_state)
         saved_tags.append(checkpoint_tag)
         while len(saved_tags) > save_top_k and _is_rank_zero():
             oldest_tag = saved_tags.pop(0)
