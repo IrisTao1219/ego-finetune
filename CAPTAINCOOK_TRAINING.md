@@ -57,8 +57,8 @@ The Dockerfile retains the original CUDA 12.8 development base for nvcc, but exp
 The CaptainCook-only configuration now reads instruction annotations locally. First run:
 
 ```bash
-python scripts/download_captaincook_annotations.py --data-root ../data
-python scripts/check_captaincook_data.py data_paths.captaincook4d_root=../data
+python scripts/download_captaincook_annotations.py --data-root ../data/captain_cook_4d
+python scripts/check_captaincook_data.py data_paths.captaincook4d_root=../data/captain_cook_4d
 ```
 
 This writes `../data/main_train.json` using the same HF repo/config/train split as before. The loader honors `include_validation_in_train: false` for local annotations too, so no `main_val.json` is required and the upstream validation split is not silently added. Other experiments retaining the default true value still require both files; pass `--include-validation` to prefetch both. Completed local files are reused, downloads are validated and published atomically. Only this preparation step requires network access for missing annotations; training reads the instruction JSON and the configured local Ego-CoMist JSON. Do not substitute Ego-CoMist's annotations.json for main_train.json.

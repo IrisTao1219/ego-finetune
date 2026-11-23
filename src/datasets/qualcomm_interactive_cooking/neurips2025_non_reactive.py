@@ -48,6 +48,7 @@ class CaptainCook4DInstructDataset(ListDataset):
                 annotation source/repo settings, fps, and frame limits.
         """
         root = Path(cfg["captaincook4d_root"])
+        annotations_root = Path(cfg.get("local_annotations_dir") or root).expanduser()
         split = cfg.get("split", "train")
         include_recipe = bool(cfg.get("include_recipe_in_prompt", False))
         fps = float(cfg.get("dataset_extracted_fps", 2))
@@ -69,7 +70,7 @@ class CaptainCook4DInstructDataset(ListDataset):
             cfg.get("use_hf_annotations")
         )
         video_to_frames = _load_or_build_video_to_frames(
-            root / "video_to_frames.pkl",
+            cfg.get("captaincook4d_frame_cache_path") or root / "video_to_frames.pkl",
             root,
             "captaincook4d",
             fps,
@@ -95,13 +96,13 @@ class CaptainCook4DInstructDataset(ListDataset):
                 cache_dir=cfg.get("hf_cache_dir", cfg.get("cache_dir")),
             )
         elif split == "train":
-            annotations = _load_json(root / f"{annotation_set}_train.json")
+            annotations = _load_json(annotations_root / f"{annotation_set}_train.json")
             if bool(cfg.get("include_validation_in_train", True)):
-                annotations += _load_json(root / f"{annotation_set}_val.json")
+                annotations += _load_json(annotations_root / f"{annotation_set}_val.json")
         elif split in {"val", "valid", "validation"}:
-            annotations = _load_json(root / f"{annotation_set}_val.json")
+            annotations = _load_json(annotations_root / f"{annotation_set}_val.json")
         else:
-            annotations = _load_json(root / f"{annotation_set}_{split}.json")
+            annotations = _load_json(annotations_root / f"{annotation_set}_{split}.json")
 
         report = {"component": "CaptainCook4DInstruct", "annotation_rows": len(annotations)}
         skipped = Counter()

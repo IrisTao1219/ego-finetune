@@ -9,7 +9,9 @@ dataset:
   dataset_list:
     - _target_: CaptainCook4DInstruct
       captaincook4d_root: ${data_paths.captaincook4d_root}
+      captaincook4d_frame_cache_path: ${data_paths.captaincook4d_root}/captain_cook_4d/video_to_frames.pkl
       annotation_source: local
+      local_annotations_dir: ${data_paths.captaincook4d_root}/captain_cook_4d
       annotation_repo_id: qualcomm/qualcomm-interactive-cooking-dataset
       annotation_set: main
       split: train
@@ -20,6 +22,7 @@ dataset:
     - _target_: EgoCoMist
       local_annotations_path: ${oc.env:HOME}/datasets/ego-comist/annotations.json
       captaincook4d_root: ${data_paths.captaincook4d_root}
+      captaincook4d_frame_cache_path: ${data_paths.captaincook4d_root}/captain_cook_4d/video_to_frames.pkl
       ego4d_root: ${data_paths.captaincook4d_root}
       egoexo4d_root: ${data_paths.captaincook4d_root}
       source_datasets: [CaptainCook4D]

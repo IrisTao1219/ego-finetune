@@ -295,7 +295,8 @@ class EgoCoMist(ListDataset):
         extra_frame_roots = _frame_roots_from_cfg(cfg)
         return {
             "CaptainCook4D": _load_or_build_video_to_frames(
-                source_roots["CaptainCook4D"] / "video_to_frames.pkl",
+                cfg.get("captaincook4d_frame_cache_path")
+                or source_roots["CaptainCook4D"] / "video_to_frames.pkl",
                 source_roots["CaptainCook4D"],
                 "captaincook4d",
                 fps,
