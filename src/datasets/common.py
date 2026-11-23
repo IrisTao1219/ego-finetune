@@ -90,8 +90,8 @@ class ListDataset(Dataset[CookingSample]):
 class WeightedMixtureDataset(Dataset[CookingSample]):
     """Virtual dataset that samples component datasets by probability.
 
-    Each index deterministically (seeded) picks a component dataset and a random
-    item from it, yielding a fixed-length mixture.
+    Each (epoch, index) deterministically picks a component and sample.
+    Sampling uses replacement; an epoch does not guarantee full raw-data coverage.
     """
 
     def __init__(
@@ -109,17 +109,36 @@ class WeightedMixtureDataset(Dataset[CookingSample]):
         self.probabilities = probabilities
         self.length = length
         self.seed = seed
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = int(epoch)
+
+    def sample_location(self, index: int) -> tuple[int, int]:
+        """Resolve a draw without loading frames or applying augmentation."""
+        rng = random.Random(f"{self.seed}:{self.epoch}:{index}")
+        dataset_idx = rng.choices(range(len(self.datasets)), weights=self.probabilities, k=1)[0]
+        dataset = self.datasets[dataset_idx]
+        weights = getattr(dataset, "sample_weights", None)
+        sample_idx = (rng.choices(range(len(dataset)), weights=weights, k=1)[0]
+                      if weights is not None else rng.randrange(len(dataset)))
+        return dataset_idx, sample_idx
 
     def __len__(self) -> int:
         return self.length
 
     def __getitem__(self, index: int) -> CookingSample:
-        rng = random.Random(self.seed + index)
-        dataset_idx = rng.choices(range(len(self.datasets)), weights=self.probabilities, k=1)[0]
+        dataset_idx, sample_idx = self.sample_location(index)
         dataset = self.datasets[dataset_idx]
-        sample_idx = rng.randrange(len(dataset))
-        data_sample = dataset[sample_idx]
-        return data_sample
+        if isinstance(dataset, ListDataset):
+            # The mixture already applied weights; do not resample a second time.
+            sample = dataset.samples[sample_idx]
+            if dataset.temporal_jitter is not None:
+                metadata = dict(sample.metadata)
+                metadata["temporal_jitter"] = dataset.temporal_jitter
+                sample = replace(sample, metadata=metadata)
+            return sample
+        return dataset[sample_idx]
 
 
 def _to_plain_dict(cfg: Any) -> dict[str, Any]:

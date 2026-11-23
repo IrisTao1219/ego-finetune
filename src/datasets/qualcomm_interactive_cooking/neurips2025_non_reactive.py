@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import random
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -102,10 +103,16 @@ class CaptainCook4DInstructDataset(ListDataset):
         else:
             annotations = _load_json(root / f"{annotation_set}_{split}.json")
 
+        report = {"component": "CaptainCook4DInstruct", "annotation_rows": len(annotations)}
+        skipped = Counter()
+        candidates = 0
         max_videos = cfg.get("max_videos")
         if max_videos is not None:
             annotations = annotations[: int(max_videos)]
 
+        report["selected_rows"] = len(annotations)
+        report["limit_filtered_rows"] = (report["annotation_rows"]
+            - report.get("source_filtered_rows", 0) - len(annotations))
         samples: list[CookingSample] = []
         sample_weights: list[float] = []
         for annotation in annotations:
@@ -121,6 +128,7 @@ class CaptainCook4DInstructDataset(ListDataset):
             for idx, output_type in enumerate(output_types):
                 if output_type != "instruction":
                     continue
+                candidates += 1
                 instruction = _normalize_text(outputs[idx])
                 next_instruction = len(output_types)
                 for follow_idx in range(idx + 1, len(output_types)):
@@ -145,6 +153,7 @@ class CaptainCook4DInstructDataset(ListDataset):
                     include_next_instruction=has_next_instruction,
                 )
                 if not responses:
+                    skipped["no_response"] += 1
                     continue
                 start_time = max(0.0, float(timestamps[idx]))
                 if (next_instruction > idx + 1) and (next_instruction < len(timestamps)):
@@ -158,6 +167,7 @@ class CaptainCook4DInstructDataset(ListDataset):
                     video_to_frames, video_id, fps, start_time, end_time, frame_limit
                 )
                 if not frame_paths:
+                    skipped["no_video_frames" if not video_to_frames.get(video_id) else "no_frames_in_time_window"] += 1
                     continue
                 has_mistake = mistake_flag_by_instruction.get(idx)
                 sample_weight = 1.0
@@ -197,6 +207,11 @@ class CaptainCook4DInstructDataset(ListDataset):
                     )
                 )
                 sample_weights.append(sample_weight)
+        report.update(candidate_instructions=candidates, matched_samples=len(samples),
+                      matched_videos=len({s.metadata["video_id"] for s in samples}),
+                      zero_weight_samples=sum(w == 0 for w in sample_weights), skipped=dict(skipped))
+        self.load_report = report
+        print("DATA_LOAD_REPORT " + __import__("json").dumps(report), flush=True)
         if samples and sample_weights and all(weight == 0.0 for weight in sample_weights):
             sample_weights[0] = 1.0
         super().__init__(

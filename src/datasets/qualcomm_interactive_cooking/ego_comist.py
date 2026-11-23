@@ -50,13 +50,20 @@ class EgoCoMist(ListDataset):
         fps = float(cfg.get("dataset_extracted_fps", cfg.get("model_input_fps", 2)))
         frame_limit = int(cfg.get("max_number_of_output_frames", 200))
         annotations = self._load_annotations(repo_id, cfg)
+        report = {"component": "EgoCoMist", "annotation_rows": len(annotations),
+                  "rows_by_source": dict(Counter(str(row.get("dataset", "")) for row in annotations))}
+        skipped = Counter()
         allowed_sources = cfg.get("source_datasets")
         if allowed_sources:
             annotations = [row for row in annotations if row.get("dataset") in allowed_sources]
+        report["source_filtered_rows"] = report["annotation_rows"] - len(annotations)
         max_videos = cfg.get("max_videos")
         if max_videos is not None:
             annotations = annotations[: int(max_videos)]
 
+        report["selected_rows"] = len(annotations)
+        report["limit_filtered_rows"] = (report["annotation_rows"]
+            - report.get("source_filtered_rows", 0) - len(annotations))
         source_roots = {
             "CaptainCook4D": Path(cfg["captaincook4d_root"]).expanduser(),
             "Ego4D": Path(cfg["ego4d_root"]).expanduser(),
@@ -74,6 +81,7 @@ class EgoCoMist(ListDataset):
             source_dataset = str(annotation.get("dataset", ""))
             video_id = str(annotation.get("video_id", ""))
             if not source_dataset or not video_id:
+                skipped["missing_source_or_video_id"] += 1
                 continue
             frame_paths = self._get_video_frames(
                 source_dataset,
@@ -84,6 +92,7 @@ class EgoCoMist(ListDataset):
                 fps,
             )
             if not frame_paths:
+                skipped["no_video_frames"] += 1
                 continue
 
             start_time = max(0.0, float(annotation.get("start_time", 0.0)))
@@ -100,6 +109,7 @@ class EgoCoMist(ListDataset):
                 frame_limit,
             )
             if not clip_frame_paths:
+                skipped["no_frames_in_time_window"] += 1
                 continue
 
             texts = list(annotation.get("texts", []))
@@ -128,6 +138,7 @@ class EgoCoMist(ListDataset):
                 include_next_instruction=True,
             )
             if not instruction or not responses:
+                skipped["missing_instruction_or_response"] += 1
                 continue
             mistake_type = self._normalize_error_type(annotation.get("mistake_type"))
             samples.append(
@@ -160,6 +171,12 @@ class EgoCoMist(ListDataset):
                 )
             )
 
+        report.update(matched_samples=len(samples),
+                      matched_videos=len({s.metadata["video_id"] for s in samples}),
+                      matched_by_source=dict(Counter(s.metadata["source_dataset"] for s in samples)),
+                      skipped=dict(skipped))
+        self.load_report = report
+        print("DATA_LOAD_REPORT " + __import__("json").dumps(report), flush=True)
         sample_weights = self._build_error_type_sample_weights(samples, cfg)
         super().__init__(
             samples,

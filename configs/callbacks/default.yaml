@@ -3,6 +3,7 @@ model_checkpoint:
   every_n_epochs: 1
   every_n_train_steps: 0
   save_last: true
+  # Best K epochs by validation loss, plus latest epoch for resuming. -1 keeps all.
   save_top_k: 1
 
 lr_monitor:

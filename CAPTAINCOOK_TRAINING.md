@@ -108,3 +108,59 @@ schedule; changing `max_steps` does not automatically extend that schedule.
 
 These paths and save/resume branches have been checked locally with mock engines;
 actual save/load on two CUDA GPUs still requires server verification.
+
+## Best model selection
+
+`save_top_k` now retains the K epoch checkpoints with the lowest validation total
+loss, plus the latest epoch for resuming (up to K+1 epoch folders). `-1` keeps all;
+`0` keeps only the latest epoch. Step checkpoints remain separate and unpruned.
+`checkpoints/best` contains the selected epoch tag; `checkpoints/latest` remains
+the most recent checkpoint for continuation. `epoch_scores.json` persists scores
+across restarts in the same output directory. Unindexed legacy epoch folders are
+left untouched; checkpoints deleted by previous code cannot be recovered.
+
+For evaluation/export, read the `best` marker and pass that complete directory:
+
+```bash
+CHECKPOINT_ROOT=/absolute/path/to/run/checkpoints
+BEST_TAG=$(cat "$CHECKPOINT_ROOT/best")
+python scripts/export_zero_checkpoint.py "$CHECKPOINT_ROOT/$BEST_TAG" /absolute/path/to/export
+```
+
+Final test metrics and automatic fp32 export still refer to the final trained
+model, not automatically to the best checkpoint. Export/evaluate `best` explicitly
+when reporting the selected model's results.
+
+## Audit loading and sampling before another run
+
+Run on the CUDA server (no training model/GPU is loaded):
+
+```bash
+set -o pipefail
+python scripts/check_captaincook_data.py \
+  data_paths.captaincook4d_root=/home/taosha/data \
+  2>&1 | tee captaincook-data-audit.log
+```
+
+`DATA_LOAD_REPORT` shows annotation rows, source/config exclusions, successful
+samples/videos and skip counts. For instructions, candidate instructions—not
+annotation rows—are the sample denominator (one row can contain multiple steps).
+For Ego-CoMist, source totals and matched source totals are reported. Missing
+video frames and empty time windows are counted separately; missing instruction/
+response content is also reported. These are loader decisions, not proof that
+cached frame files are all readable or that timestamps/labels are correct.
+
+`VIDEO_SPLIT` shows video-disjoint splits and raw component counts.
+`SAMPLING_REPORT` shows draws, unique samples, repeated draws and per-component
+coverage for epoch indices 0 and 1. This audit resolves sample indices without
+loading image pixels. Source filtering is intentional in the CaptainCook-only
+configuration; it does not represent the full paper mixture.
+
+Training now changes the weighted sample selection each epoch, deterministically
+from seed/epoch/index. Component sample weights are applied once. Sampling remains
+with replacement; 3200 draws need not cover every raw sample. Worker processes
+are recreated each epoch for epoch-aware mixtures so they receive the new epoch.
+Validation/test still enumerate held-out samples without this resampling.
+The sampling algorithm has changed, so old runs cannot be reproduced exactly
+with the new code, including when continuing an old checkpoint. Training length,
+learning rate and mixture proportions have not been changed by this repair.

@@ -22,6 +22,7 @@ from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from tqdm.auto import tqdm
 from transformers import AutoProcessor
 
+from checkpointing import retain_epoch_checkpoints
 from collator import QwenVideoCollator, build_collator_config
 from data import build_datasets
 from eval import evaluate_loss as _evaluate
@@ -178,6 +179,13 @@ def _build_dataloader(
         The configured ``DataLoader``.
     """
     sampler = _build_sampler(dataset, shuffle=shuffle)
+    base_dataset = dataset
+    while hasattr(base_dataset, "dataset"):
+        base_dataset = base_dataset.dataset
+    # Recreate workers after set_epoch so they receive the new sampling epoch.
+    persistent = bool(cfg.persistent_workers) and int(cfg.num_workers) > 0
+    if hasattr(base_dataset, "set_epoch"):
+        persistent = False
     return DataLoader(
         dataset,
         batch_size=int(cfg.batch_size if batch_size is None else batch_size),
@@ -185,7 +193,7 @@ def _build_dataloader(
         sampler=sampler,
         num_workers=int(cfg.num_workers),
         pin_memory=bool(cfg.pin_memory),
-        persistent_workers=bool(cfg.persistent_workers) and int(cfg.num_workers) > 0,
+        persistent_workers=persistent,
         collate_fn=collator,
     )
 
@@ -547,7 +555,6 @@ def run_experiment(cfg: DictConfig) -> float:
     max_steps = int(cfg.trainer.get("max_steps", -1))
     save_top_k = int(cfg.callbacks.model_checkpoint.get("save_top_k", 1))
     every_n_train_steps = int(cfg.callbacks.model_checkpoint.get("every_n_train_steps", 0) or 0)
-    saved_tags: list[str] = []
 
     for epoch_idx in range(start_epoch, max_epochs):
         if max_steps > 0 and global_step >= max_steps:
@@ -555,6 +562,13 @@ def run_experiment(cfg: DictConfig) -> float:
         sampler = train_loader.sampler
         if isinstance(sampler, DistributedSampler):
             sampler.set_epoch(epoch_idx)
+
+        training_dataset = train_loader.dataset
+        # Subset wraps the mixture in non-video-split experiments.
+        while hasattr(training_dataset, "dataset"):
+            training_dataset = training_dataset.dataset
+        if hasattr(training_dataset, "set_epoch"):
+            training_dataset.set_epoch(epoch_idx)
 
         model_engine.train()
         running_metrics = {
@@ -672,23 +686,15 @@ def run_experiment(cfg: DictConfig) -> float:
             "record": record,
         }
         _save_training_checkpoint(model_engine, checkpoint_root, checkpoint_tag, client_state)
-        saved_tags.append(checkpoint_tag)
-        while len(saved_tags) > save_top_k and _is_rank_zero():
-            oldest_tag = saved_tags.pop(0)
-            oldest_path = checkpoint_root / oldest_tag
-            if oldest_path.exists():
-                for child in oldest_path.iterdir():
-                    if child.is_file():
-                        child.unlink()
-                    else:
-                        for nested in child.rglob("*"):
-                            if nested.is_file():
-                                nested.unlink()
-                        for nested in sorted(child.rglob("*"), reverse=True):
-                            if nested.is_dir():
-                                nested.rmdir()
-                        child.rmdir()
-                oldest_path.rmdir()
+        if _is_rank_zero():
+            retain_epoch_checkpoints(
+                checkpoint_root, checkpoint_tag, float(val_metrics["loss"]), save_top_k
+            )
+            best_marker = checkpoint_root / "best"
+            if best_marker.exists():
+                _print_rank_zero(f"Best validation checkpoint: {checkpoint_root / best_marker.read_text().strip()}")
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
 
         best_val_loss = min(best_val_loss, val_metrics["loss"])
         if max_steps > 0 and global_step >= max_steps:
